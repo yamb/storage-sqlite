@@ -1,0 +1,15 @@
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false
+minimumReleaseAgeExclude:
+  - 'yamb'
+  - '@meritt/yamb-*'
+  - microtypo
+  - oxfmt
+  - oxlint
+  - '@oxfmt/*'
+  - '@oxlint/*'
+minimumReleaseAgeExcludePrune: false
+blockExoticSubdeps: true
+trustPolicy: no-downgrade
+trustPolicyExcludePrune: true

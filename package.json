@@ -1,0 +1,67 @@
+{
+  "name": "@meritt/yamb-storage-sqlite",
+  "version": "0.1.0",
+  "description": "SQLite storage for Yamb using node:sqlite",
+  "keywords": [
+    "blog",
+    "node:sqlite",
+    "sqlite",
+    "storage",
+    "yamb"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "Alexey Simonenko",
+    "email": "alexey@simonenko.dev",
+    "url": "https://simonenko.xyz"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yamb/storage-sqlite.git"
+  },
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "imports": {
+    "#core": "yamb",
+    "#core/*": "yamb/*"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "lint": "oxlint",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "test": "node scripts/run-tests.mjs",
+    "test:watch": "node --test --watch --test-concurrency=1 'test/**/*.test.js'"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "oxfmt": "0.80.0",
+    "oxlint": "1.95.0",
+    "yamb": "1.0.0"
+  },
+  "peerDependencies": {
+    "yamb": "^1.0.0"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "26.13.1",
+      "onFail": "download"
+    }
+  },
+  "engines": {
+    "node": ">=26.13.0"
+  },
+  "packageManager": "pnpm@12.23.0"
+}

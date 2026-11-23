@@ -1,0 +1,239 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash --noprofile --norc -euo pipefail {0}
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gates:
+    name: Gates
+    runs-on: ubuntu-26.04
+    timeout-minutes: ${{ github.ref_type == 'tag' && 5 || 10 }}
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.package.outputs.commit }}
+      digest: ${{ steps.package.outputs.digest }}
+      asset: ${{ steps.package.outputs.asset }}
+      npm_asset: ${{ steps.package.outputs.npm_asset }}
+      npm_digest: ${{ steps.package.outputs.npm_digest }}
+      artifact: ${{ steps.package.outputs.artifact }}
+    env:
+      YAMB_REQUIRE_DB: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: ${{ github.ref_type == 'tag' && '0' || '1' }}
+          persist-credentials: false
+
+      - name: Identity
+        if: github.ref_type == 'tag'
+        env:
+          BRANCH: ${{ github.event.repository.default_branch }}
+          PROTECTED: ${{ github.ref_protected }}
+        run: |
+          [[ "$PROTECTED" == true ]] || { echo "::error::Enable the v* tag ruleset before tagging"; exit 1; }
+          [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          test "$(jq -er '.name + "@" + .version' package.json)" = "@meritt/yamb-storage-sqlite@${GITHUB_REF_NAME#v}"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "$GITHUB_SHA^{commit}")"
+          git merge-base --is-ancestor HEAD "refs/remotes/origin/$BRANCH"
+
+      - name: Setup
+        uses: pnpm/setup@731dfb6463bbd11c11fd0ee11fe00ed0e36d48a1 # v3.2.0
+        with:
+          cache: ${{ github.ref_type != 'tag' }}
+          save-cache: ${{ github.event_name == 'push' && github.ref_type == 'branch' }}
+          require-lockfile: true
+
+      - name: SQLite
+        run: pnpm exec node scripts/prepare-sqlite.mjs
+
+      - name: Format
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint --format=github
+
+      - name: Test
+        run: pnpm test ${{ github.ref_type != 'tag' && '--coverage' || '' }}
+
+      - name: Coverage
+        if: github.ref_type != 'tag'
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2.3.8
+        with:
+          file: coverage/lcov.info
+          format: lcov
+
+      - name: Package
+        id: package
+        run: |
+          git diff --exit-code HEAD
+          version="$(jq -er .version package.json)"
+          asset="yamb-storage-sqlite-$version.tgz"
+          npm_asset="meritt-$asset"
+          bash scripts/pack.sh "$RUNNER_TEMP/release"
+          {
+            echo "commit=$(git rev-parse HEAD)"
+            echo "digest=sha256:$(sha256sum "$RUNNER_TEMP/release/$asset" | cut -d ' ' -f 1)"
+            echo "asset=$asset"
+            echo "npm_asset=$npm_asset"
+            echo "npm_digest=sha256:$(sha256sum "$RUNNER_TEMP/release/$npm_asset" | cut -d ' ' -f 1)"
+            echo "artifact=package-$GITHUB_RUN_ATTEMPT"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Smoke
+        env:
+          ASSET: ${{ steps.package.outputs.asset }}
+          NPM_ASSET: ${{ steps.package.outputs.npm_asset }}
+          DIGEST: ${{ steps.package.outputs.digest }}
+        run: |
+          archive="$RUNNER_TEMP/release/$ASSET"
+          npm_archive="$RUNNER_TEMP/release/$NPM_ASSET"
+          pnpm exec bash scripts/smoke.sh "$npm_archive"
+          pnpm exec bash scripts/smoke.sh "$archive"
+          pnpm publish "$npm_archive" --registry=https://registry.npmjs.org/ --access public --no-git-checks --ignore-scripts --dry-run
+          pnpm exec node scripts/publish.mjs "$archive" "$DIGEST" --dry-run
+          test "sha256:$(sha256sum "$archive" | cut -d ' ' -f 1)" = "$DIGEST"
+
+      - name: Handoff
+        if: github.event_name == 'push' && github.ref_type == 'branch'
+        run: echo 'Before tagging, run node scripts/preflight.mjs with your repository administrator account.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload
+        if: github.ref_type == 'tag'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.package.outputs.artifact }}
+          path: ${{ runner.temp }}/release/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  attest:
+    name: Attest
+    if: github.ref_type == 'tag' && github.repository == 'yamb/storage-sqlite' && github.ref_protected
+    needs: gates
+    runs-on: ubuntu-26.04
+    timeout-minutes: 2
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    env:
+      ASSET: ${{ needs.gates.outputs.asset }}
+      NPM_ASSET: ${{ needs.gates.outputs.npm_asset }}
+      NPM_DIGEST: ${{ needs.gates.outputs.npm_digest }}
+      DIGEST: ${{ needs.gates.outputs.digest }}
+    steps:
+      - name: Download
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.gates.outputs.artifact }}
+          path: ${{ runner.temp }}/release
+
+      - name: Verify
+        run: |
+          test "sha256:$(sha256sum "$RUNNER_TEMP/release/$ASSET" | cut -d ' ' -f 1)" = "$DIGEST"
+          test "sha256:$(sha256sum "$RUNNER_TEMP/release/$NPM_ASSET" | cut -d ' ' -f 1)" = "$NPM_DIGEST"
+
+      - name: Attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/release/*.tgz
+
+  release:
+    name: Release
+    if: github.ref_type == 'tag' && github.repository == 'yamb/storage-sqlite' && github.ref_protected
+    needs: [gates, attest]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 3
+    environment: release
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    permissions:
+      attestations: read
+      contents: write
+      packages: write
+    env:
+      ASSET: ${{ needs.gates.outputs.asset }}
+      NPM_ASSET: ${{ needs.gates.outputs.npm_asset }}
+      NPM_DIGEST: ${{ needs.gates.outputs.npm_digest }}
+      BRANCH: ${{ github.event.repository.default_branch }}
+      COMMIT: ${{ needs.gates.outputs.commit }}
+      DIGEST: ${{ needs.gates.outputs.digest }}
+      GH_REPO: yamb/storage-sqlite
+      REF: ${{ github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.gates.outputs.commit }}
+          persist-credentials: false
+          sparse-checkout: |
+            package.json
+            pnpm-lock.yaml
+            scripts/publish.mjs
+            scripts/release.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Setup
+        uses: pnpm/setup@731dfb6463bbd11c11fd0ee11fe00ed0e36d48a1 # v3.2.0
+        with:
+          install: false
+          cache: false
+          require-lockfile: true
+
+      - name: Download
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.gates.outputs.artifact }}
+          path: ${{ runner.temp }}/release
+
+      - name: Verify
+        run: |
+          test "$(git rev-parse HEAD)" = "$COMMIT"
+          test "$NPM_ASSET" = "meritt-$ASSET"
+          test "sha256:$(sha256sum "$RUNNER_TEMP/release/$NPM_ASSET" | cut -d ' ' -f 1)" = "$NPM_DIGEST"
+          test "$ASSET" = "yamb-storage-sqlite-${REF#v}.tgz"
+          test "$(jq -er '.name + "@" + .version' package.json)" = "@meritt/yamb-storage-sqlite@${REF#v}"
+          test "sha256:$(sha256sum "$RUNNER_TEMP/release/$ASSET" | cut -d ' ' -f 1)" = "$DIGEST"
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/release.sh "$RUNNER_TEMP/release"
+
+      - name: Publish
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PNPM_CONFIG__AUTH: |
+            {"https://npm.pkg.github.com": {"@yamb": {"authToken": ${{ toJSON(github.token) }}}}}
+        run: node scripts/publish.mjs "$RUNNER_TEMP/release/$ASSET" "$DIGEST"
+
+      - name: Handoff
+        run: |
+          {
+            echo '### Publish to npm'
+            echo
+            echo '```sh'
+            echo "gh release download $REF --repo $GH_REPO --pattern $NPM_ASSET &&"
+            echo "  gh release verify-asset $REF $NPM_ASSET --repo $GH_REPO &&"
+            echo "  pnpm publish ./$NPM_ASSET --registry=https://registry.npmjs.org/ --access public --no-git-checks --ignore-scripts"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
