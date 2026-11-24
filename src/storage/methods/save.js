@@ -1,13 +1,9 @@
 import { randomUUIDv7 } from 'node:crypto';
 
-import {
-  StorageNotOpenError,
-  StorageDuplicateError,
-  PostNotFoundError,
-  StorageWriteError
-} from '#core/errors';
+import { StorageNotOpenError, StorageDuplicateError, StorageWriteError } from '#core/errors';
 
 import { getState } from '../internal.js';
+import { mismatch } from './mismatch.js';
 
 const SQLITE_CONSTRAINT_UNIQUE = 2067;
 
@@ -53,20 +49,26 @@ export default {
       throw new StorageNotOpenError();
     }
 
-    options.signal?.throwIfAborted();
+    const { signal, expected } = options;
+
+    signal?.throwIfAborted();
 
     const isInsert = !raw.id;
     const id = raw.id ?? randomUUIDv7();
+    const { statements } = state;
 
     try {
       if (isInsert) {
-        state.statements.insert.run(...rowParams(id, raw));
+        statements.insert.run(...rowParams(id, raw));
       } else {
         const [, ...params] = rowParams(id, raw);
-        const result = state.statements.update.run(...params, id);
+        const result =
+          expected === undefined
+            ? statements.update.run(...params, id)
+            : statements.updateIf.run(...params, id, expected);
 
         if (result.changes === 0) {
-          throw new PostNotFoundError(`id "${id}" not found`);
+          throw mismatch(state, id, expected);
         }
       }
     } catch (cause) {
