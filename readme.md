@@ -1,4 +1,4 @@
-# @meritt/yamb-storage-sqlite
+# yamb-storage-sqlite
 
 [![npm version][npm-image]][npm-url] [![Build status][github-actions-image]][github-actions-url] [![Coverage status][coveralls-image]][coveralls-url] [![Dependency status][libraries-image]][libraries-url]
 
@@ -11,14 +11,14 @@ For GitHub Packages, route the `@yamb` scope to `https://npm.pkg.github.com` and
 Requires Node.js 26.13 or later, `yamb` and an existing SQLite file with the [required posts structure](#configuration-and-structure).
 
 ```bash
-pnpm add yamb @meritt/yamb-storage-sqlite
+pnpm add yamb yamb-storage-sqlite
 ```
 
 Set `YAMB_SQLITE_PATH` to the prepared database file.
 
 ```js
-import { sqlite } from '@meritt/yamb-storage-sqlite';
 import { yamb } from 'yamb';
+import { sqlite } from 'yamb-storage-sqlite';
 
 await using blog = yamb({
   storage: sqlite({
@@ -98,11 +98,11 @@ Shared errors come from `yamb/errors`. Adapter-specific classes are internal; in
 
 MIT. See `LICENSE`.
 
-[npm-image]: https://img.shields.io/npm/v/@meritt/yamb-storage-sqlite?style=flat
-[npm-url]: https://www.npmjs.com/package/@meritt/yamb-storage-sqlite
+[npm-image]: https://img.shields.io/npm/v/yamb-storage-sqlite?style=flat
+[npm-url]: https://www.npmjs.com/package/yamb-storage-sqlite
 [github-actions-image]: https://github.com/yamb/storage-sqlite/actions/workflows/ci.yml/badge.svg
 [github-actions-url]: https://github.com/yamb/storage-sqlite/actions/workflows/ci.yml
 [coveralls-image]: https://coveralls.io/repos/github/yamb/storage-sqlite/badge.svg
 [coveralls-url]: https://coveralls.io/github/yamb/storage-sqlite
-[libraries-image]: https://img.shields.io/librariesio/release/npm/%40meritt%2Fyamb-storage-sqlite?style=flat
-[libraries-url]: https://libraries.io/npm/%40meritt%2Fyamb-storage-sqlite
+[libraries-image]: https://img.shields.io/librariesio/release/npm/yamb-storage-sqlite?style=flat
+[libraries-url]: https://libraries.io/npm/yamb-storage-sqlite

@@ -21,7 +21,7 @@ while IFS= read -r file; do
 done < "$staging/files"
 
 version="$(jq -er .version package.json)"
-name="$(jq -er '.name | select(startswith("@meritt/yamb-")) | ltrimstr("@meritt/yamb-")' package.json)"
+name="$(jq -er '.name | select(startswith("yamb-")) | ltrimstr("yamb-")' package.json)"
 sed 's|^|package/|' "$staging/files" | LC_ALL=C sort > "$staging/expected"
 
 pack() {
@@ -33,11 +33,11 @@ pack() {
   mv "$staging/result.tgz" "$archive"
 }
 
-pack "meritt-yamb-$name"
+pack "npm-yamb-$name"
 
 jq --arg name "@yamb/$name" '
   def github: if . == "yamb" then "@yamb/core"
-    else sub("^@meritt/yamb-"; "@yamb/") end;
+    else sub("^yamb-"; "@yamb/") end;
   .name = $name |
   .publishConfig.registry = "https://npm.pkg.github.com/" |
   .devDependencies |= with_entries(.key |= github) |

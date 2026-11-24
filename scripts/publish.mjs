@@ -77,7 +77,7 @@ async function publish(input, digest, mode) {
   const integrity = `sha512-${createHash('sha512').update(bytes).digest('base64')}`;
 
   const manifest = JSON.parse(await readFile('package.json', 'utf8'));
-  const name = manifest.name.replace('@meritt/yamb-', '@yamb/');
+  const name = manifest.name.replace(/^yamb-/, '@yamb/');
   const { version } = manifest;
   const packed = JSON.parse(execFileSync('tar', ['-xOzf', archive, 'package/package.json']));
   assert.equal(packed.name, name, 'Archive package name differs');

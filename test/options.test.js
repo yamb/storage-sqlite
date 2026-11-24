@@ -17,7 +17,7 @@ sqliteTest(
     }
 
     await access(path);
-    const { sqlite } = await import('@meritt/yamb-storage-sqlite');
+    const { sqlite } = await import('yamb-storage-sqlite');
     const blog = yamb({
       storage: sqlite({ path }),
       options: z.strictObject({ homepage: z.boolean().default(false) })

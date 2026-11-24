@@ -47,7 +47,7 @@ jobs:
         run: |
           [[ "$PROTECTED" == true ]] || { echo "::error::Enable the v* tag ruleset before tagging"; exit 1; }
           [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
-          test "$(jq -er '.name + "@" + .version' package.json)" = "@meritt/yamb-storage-sqlite@${GITHUB_REF_NAME#v}"
+          test "$(jq -er '.name + "@" + .version' package.json)" = "yamb-storage-sqlite@${GITHUB_REF_NAME#v}"
           test "$(git rev-parse HEAD)" = "$(git rev-parse "$GITHUB_SHA^{commit}")"
           git merge-base --is-ancestor HEAD "refs/remotes/origin/$BRANCH"
 
@@ -85,7 +85,7 @@ jobs:
           git diff --exit-code HEAD
           version="$(jq -er .version package.json)"
           asset="yamb-storage-sqlite-$version.tgz"
-          npm_asset="meritt-$asset"
+          npm_asset="npm-$asset"
           bash scripts/pack.sh "$RUNNER_TEMP/release"
           {
             echo "commit=$(git rev-parse HEAD)"
@@ -208,10 +208,10 @@ jobs:
       - name: Verify
         run: |
           test "$(git rev-parse HEAD)" = "$COMMIT"
-          test "$NPM_ASSET" = "meritt-$ASSET"
+          test "$NPM_ASSET" = "npm-$ASSET"
           test "sha256:$(sha256sum "$RUNNER_TEMP/release/$NPM_ASSET" | cut -d ' ' -f 1)" = "$NPM_DIGEST"
           test "$ASSET" = "yamb-storage-sqlite-${REF#v}.tgz"
-          test "$(jq -er '.name + "@" + .version' package.json)" = "@meritt/yamb-storage-sqlite@${REF#v}"
+          test "$(jq -er '.name + "@" + .version' package.json)" = "yamb-storage-sqlite@${REF#v}"
           test "sha256:$(sha256sum "$RUNNER_TEMP/release/$ASSET" | cut -d ' ' -f 1)" = "$DIGEST"
 
       - name: Release
