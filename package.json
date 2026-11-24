@@ -1,6 +1,6 @@
 {
   "name": "yamb-storage-sqlite",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "SQLite storage for Yamb using node:sqlite",
   "keywords": [
     "blog",
@@ -48,7 +48,7 @@
   "devDependencies": {
     "oxfmt": "0.80.0",
     "oxlint": "1.95.0",
-    "yamb": "1.0.0"
+    "yamb": "1.0.3"
   },
   "peerDependencies": {
     "yamb": "^1.0.0"
