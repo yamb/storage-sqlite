@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import nodeTest from 'node:test';
 
-import { sqlite as createStorage } from '@meritt/yamb-storage-sqlite';
+import { sqlite as createStorage } from 'yamb-storage-sqlite';
 
 export const path = process.env.YAMB_SQLITE_FIXTURE;
 const owned = new Set();

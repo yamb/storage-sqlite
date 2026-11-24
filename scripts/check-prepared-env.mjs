@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 
-import { sqlite } from '@meritt/yamb-storage-sqlite';
+import { sqlite } from 'yamb-storage-sqlite';
 
 const path = process.env.YAMB_SQLITE_FIXTURE;
 

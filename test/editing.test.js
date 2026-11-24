@@ -9,7 +9,7 @@ test(
       : 'Provide an existing schema through YAMB_SQLITE_FIXTURE; this test never creates one'
   },
   async () => {
-    const { sqlite } = await import('@meritt/yamb-storage-sqlite');
+    const { sqlite } = await import('yamb-storage-sqlite');
     const { yamb } = await import('yamb');
     const path = process.env.YAMB_SQLITE_FIXTURE;
     const { access } = await import('node:fs/promises');
