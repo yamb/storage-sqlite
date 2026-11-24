@@ -8,7 +8,7 @@ For GitHub Packages, route the `@yamb` scope to `https://npm.pkg.github.com` and
 
 ## Quick start
 
-Requires Node.js 26.13 or later, `yamb` and an existing SQLite file with the [required posts structure](#configuration-and-structure).
+Requires Node.js 26.13 or later, `yamb` 1.0.5 or later and an existing SQLite file with the [required posts structure](#configuration-and-structure).
 
 ```bash
 pnpm add yamb yamb-storage-sqlite
@@ -64,7 +64,9 @@ console.log(saved.text);
 
 Flat columns support SQL filtering and ordering. `raw_json` is the returned source post, with dates as fixed-precision UTC strings and `undefined` properties omitted. Flat fields and lookup/query keys reject unpaired surrogates and preserve NUL. JSON-only strings and keys preserve both.
 
-New IDs use `randomUUIDv7()`. Updates replace whole rows and fail if the target was deleted. Database constraints enforce URI uniqueness. Independent edits use whole-row last-write semantics.
+New IDs use `randomUUIDv7()`. Updates replace whole rows and fail if the target was deleted. Database constraints enforce URI uniqueness.
+
+Core stores a version string as the top-level `version` key of `raw_json`. When core supplies an expected version, each update, removal and fence is a single `UPDATE` or `DELETE` whose `WHERE` clause also requires `json_extract(raw_json, '$.version') IS ?`, so the comparison and the write are atomic across connections; `null` matches a row without a version. A fence sets only that key with `json_set` in the same statement, without reading the row first. A statement that changes nothing is followed by an ID lookup that reports `YAMB_POST_CONFLICT` for an existing row and `YAMB_POST_NOT_FOUND` otherwise. Rows written before versions need no schema change or migration.
 
 Option comparisons use exact JSON scalar types. Missing fields match fixed defaults supplied by core on open. `find(id)` looks up a post by ID and `fetch(uri)` looks it up by current URI. Core refreshes its lookup maps from the `[id, uri]` pairs yielded by `entries()`.
 
@@ -84,7 +86,8 @@ Each traversal owns a statement iterator and can observe concurrent writes. Earl
 | `YAMB_STORAGE_READ` | Invalid native lookup key or corrupt `raw_json` |
 | `YAMB_STORAGE_WRITE` | Invalid flat Unicode or SQLite write failure; native cause retained |
 | `YAMB_STORAGE_DUPLICATE` | Unique constraint violation |
-| `YAMB_POST_NOT_FOUND` | Missing update/removal target; missing reads return `null` |
+| `YAMB_POST_NOT_FOUND` | Missing update/removal/fence target; missing reads return `null` |
+| `YAMB_POST_CONFLICT` | Stored version differs from the expected one; nothing written |
 | `YAMB_STORAGE_NOT_OPEN` | Operation outside an open lifetime |
 | `YAMB_QUERY_VALIDATION` | Invalid query or pagination |
 
