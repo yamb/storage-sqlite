@@ -55,16 +55,12 @@ test('blog.all() includes every status and blog.published selects public posts',
   });
 });
 
-test('scope chain: blog.all({ tags }).published().recent()', async () => {
+test('scope chain: blog.published.tagged(...).recent()', async () => {
   await withBlog(async (blog) => {
     await blog.create({ title: 'JS', text: '...', status: 'published', tags: ['js'] });
     await blog.create({ title: 'Ruby', text: '...', status: 'published', tags: ['ruby'] });
 
-    const posts = await blog
-      .all({ tags: ['js'] })
-      .published()
-      .recent(5)
-      .toArray();
+    const posts = await blog.published.tagged('js').recent(5).toArray();
     const titles = posts.map((p) => p.title);
     assert.deepEqual(titles, ['JS']);
   });

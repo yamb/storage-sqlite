@@ -8,7 +8,7 @@ For GitHub Packages, route the `@yamb` scope to `https://npm.pkg.github.com` and
 
 ## Quick start
 
-Requires Node.js 26.13 or later, `yamb` 1.0.5 or later and an existing SQLite file with the [required posts structure](#configuration-and-structure).
+Requires Node.js 26.13 or later, `yamb` 1.1.0 or later and an existing SQLite file with the [required posts structure](#configuration-and-structure).
 
 ```bash
 pnpm add yamb yamb-storage-sqlite

@@ -48,10 +48,10 @@
   "devDependencies": {
     "oxfmt": "0.80.0",
     "oxlint": "1.95.0",
-    "yamb": "1.0.5"
+    "yamb": "1.1.0"
   },
   "peerDependencies": {
-    "yamb": "^1.0.5"
+    "yamb": "^1.1.0"
   },
   "devEngines": {
     "runtime": {
