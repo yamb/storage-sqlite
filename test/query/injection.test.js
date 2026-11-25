@@ -10,35 +10,30 @@ test('valid order values are accepted', () => {
   }
 });
 
-test('order injection attempt throws YAMB_QUERY_VALIDATION', () => {
-  assert.throws(
-    () => buildQuery({}, { order: 'publishedAt; DROP TABLE posts --', limit: 10 }),
-    (err) => err.code === 'YAMB_QUERY_VALIDATION' && /invalid order/.test(err.message)
-  );
-});
-
-test('unknown field in order throws YAMB_QUERY_VALIDATION', () => {
-  assert.throws(
-    () => buildQuery({}, { order: 'rowid', limit: 10 }),
-    (err) => err.code === 'YAMB_QUERY_VALIDATION'
-  );
-});
-
-test('order with stray whitespace is rejected', () => {
-  assert.throws(
-    () => buildQuery({}, { order: '  publishedAt  ', limit: 10 }),
-    (err) => err.code === 'YAMB_QUERY_VALIDATION'
-  );
+test('order injection attempts throw YAMB_QUERY_VALIDATION', () => {
+  for (const order of ['publishedAt; DROP TABLE posts --', 'rowid', '  publishedAt  ']) {
+    assert.throws(() => buildQuery({}, { order, limit: 10 }), {
+      code: 'YAMB_QUERY_VALIDATION'
+    });
+  }
 });
 
 test('error details include allowed values for actionable feedback', () => {
-  try {
-    buildQuery({}, { order: 'malicious', limit: 10 });
-    assert.fail('expected throw');
-  } catch (err) {
-    assert.equal(err.code, 'YAMB_QUERY_VALIDATION');
-    assert.equal(err.details.field, 'order');
-    assert.ok(Array.isArray(err.details.allowed));
-    assert.ok(err.details.allowed.includes('-publishedAt'));
-  }
+  assert.throws(
+    () => buildQuery({}, { order: 'malicious', limit: 10 }),
+    (err) =>
+      err.code === 'YAMB_QUERY_VALIDATION' &&
+      err.details.field === 'options' &&
+      err.details.issues[0].values.includes('-publishedAt')
+  );
+});
+
+test('pagination and values are bound, never interpolated', () => {
+  const { sql, bindings } = buildQuery(
+    { status: 'published', options: { kind: "'; DROP TABLE posts --" } },
+    { limit: 5, offset: 2 }
+  );
+
+  assert.doesNotMatch(sql, /DROP|'published'|\b5\b|\b2\b/);
+  assert.deepEqual(bindings.slice(-3), ['published', 5, 2]);
 });

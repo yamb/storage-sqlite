@@ -1,21 +1,15 @@
-import { StorageNotOpenError } from '#core/errors';
-
-import { getState } from '../internal.js';
+import { openState } from '../internal.js';
 
 export default {
   name: 'entries',
 
   fn(storage, options = {}) {
-    const state = getState(storage);
-
-    if (!state.db) {
-      throw new StorageNotOpenError();
-    }
+    openState(storage);
 
     return {
       async *[Symbol.asyncIterator]() {
         options.signal?.throwIfAborted();
-        using stmt = state.db.prepare('SELECT id, uri FROM posts');
+        using stmt = openState(storage).db.prepare('SELECT id, uri FROM posts');
 
         for (const row of stmt.iterate()) {
           options.signal?.throwIfAborted();

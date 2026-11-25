@@ -199,8 +199,8 @@ importers:
         specifier: 1.95.0
         version: 1.95.0
       yamb:
-        specifier: 1.0.5
-        version: 1.0.5
+        specifier: 1.1.0
+        version: 1.1.0
 
 packages:
 
@@ -613,8 +613,8 @@ packages:
     resolution: {integrity: sha512-jBrmx4lYmaC9k/mgPbylxs7kBUxHtD8256up+HjLaDFfXScKJQyil+SWXSvhAtT7XHo+yTVlpB81PGmHP8oLSQ==}
     engines: {node: ^20.0.0 || >=22.0.0}
 
-  yamb@1.0.5:
-    resolution: {integrity: sha512-8yWuPBBW4BI8CskwoZdOulkM8AGvv5eZ4V7BBvGF0eMrU+d4LtD10jNipCX5QEp7cmCsEBEYpSRYDi/H1hDjWw==}
+  yamb@1.1.0:
+    resolution: {integrity: sha512-yhlXOHSy8bAzwIIhxb4akg3pXj3aSGHFGd4j2/L9tmpfvvIgiObSRGKxYJVg/PZ5GMTlKEFyKuOyqGJchRl4IQ==}
     engines: {node: '>=26.13.0'}
 
   zod@4.6.7:
@@ -786,7 +786,7 @@ snapshots:
 
   tinypool@2.2.0: {}
 
-  yamb@1.0.5:
+  yamb@1.1.0:
     dependencies:
       zod: 4.6.7
 

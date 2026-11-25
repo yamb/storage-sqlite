@@ -84,6 +84,18 @@ test('an unconditional write ignores the stored version', async () => {
   assert.equal(stored.version, 'v2');
 });
 
+test('core finds and fences an unstorable ID as a missing post', async () => {
+  const blog = yamb({ storage: createStorage() });
+  await blog.open();
+
+  try {
+    assert.equal(await blog.find('x\ud800z'), null);
+    await assert.rejects(blog.fence('x\ud800z', null), notFound);
+  } finally {
+    await blog.close();
+  }
+});
+
 test('a stale Post conflicts and a fence invalidates a lost write', async () => {
   const blog = yamb({ storage: createStorage() });
   await blog.open();
