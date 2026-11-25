@@ -1,28 +1,20 @@
-import { StorageNotOpenError } from '#core/errors';
-
-import { getState } from '../internal.js';
-import { assertStringKey } from './assert-string-key.js';
+import { openState } from '../internal.js';
+import { storable } from './key.js';
 import { parseRawJson } from './parse-raw.js';
 
 export default {
   name: 'fetch',
 
   async fn(storage, uri, options = {}) {
-    const state = getState(storage);
+    const state = openState(storage);
 
-    if (!state.db) {
-      throw new StorageNotOpenError();
+    if (!storable(uri, 'uri')) {
+      return null;
     }
-
-    assertStringKey(uri, 'uri');
 
     options.signal?.throwIfAborted();
     const row = state.statements.byUri.get(uri);
 
-    if (!row) {
-      return null;
-    }
-
-    return parseRawJson(row.raw_json, { uri });
+    return row ? parseRawJson(row.raw_json, { uri }) : null;
   }
 };

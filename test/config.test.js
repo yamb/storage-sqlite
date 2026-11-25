@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { access, mkdtempDisposable } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { SqliteConfigError, SqliteOpenError } from '../src/errors/index.js';
@@ -53,16 +56,21 @@ test('error details include parsing issues', () => {
   }
 });
 
-test('open() with an unwritable/invalid path throws SqliteOpenError, not a raw driver error', async () => {
-  const storage = sqlite({ path: '/nonexistent-dir-xyz-yamb-probe/foo.db' });
+test('open() of a missing file throws SqliteOpenError and creates nothing', async () => {
+  await using dir = await mkdtempDisposable(join(tmpdir(), 'yamb-sqlite-'));
 
-  await assert.rejects(
-    () => storage.open(),
-    (err) =>
-      err instanceof SqliteOpenError &&
-      err.code === 'YAMB_SQLITE_OPEN' &&
-      err.cause?.code === 'ENOENT'
-  );
+  for (const readonly of [false, true]) {
+    const path = join(dir.path, 'missing.db');
+
+    await assert.rejects(
+      () => sqlite({ path, readonly }).open(),
+      (err) =>
+        err instanceof SqliteOpenError &&
+        err.code === 'YAMB_SQLITE_OPEN' &&
+        err.cause?.errcode === 14
+    );
+    await assert.rejects(access(path), { code: 'ENOENT' });
+  }
 });
 
 test('operations before open reject without reading or writing any record', async () => {

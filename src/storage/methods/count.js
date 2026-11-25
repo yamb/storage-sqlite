@@ -1,22 +1,15 @@
-import { StorageNotOpenError } from '#core/errors';
-
 import { buildCountQuery } from '../../query/build.js';
-import { getState } from '../internal.js';
+import { openState } from '../internal.js';
 
 export default {
   name: 'count',
 
   async fn(storage, query = {}, options = {}) {
     options.signal?.throwIfAborted();
-    const state = getState(storage);
-
-    if (!state.db) {
-      throw new StorageNotOpenError();
-    }
-
+    const state = openState(storage);
     const { sql, bindings } = buildCountQuery(query, state.optionDefaults);
-    const row = state.db.prepare(sql).get(...bindings);
+    using stmt = state.db.prepare(sql);
 
-    return Number(row.n);
+    return stmt.get(...bindings).n;
   }
 };

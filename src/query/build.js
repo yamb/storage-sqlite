@@ -1,133 +1,61 @@
-import { orderValues } from '#core/constants';
+import { z } from 'zod';
+
 import { QueryValidationError } from '#core/errors';
-import {
-  encodeInstant,
-  LimitSchema,
-  OffsetSchema,
-  OptionFilterSchema,
-  TagSchema
-} from '#core/schemas';
+import { encodeInstant, InstantSchema, OptionsSchema, QuerySchema, UriSchema } from '#core/schemas';
 
-function bound(value, field) {
-  if (value instanceof Temporal.Instant) {
-    return encodeInstant(value);
-  }
+const FilterSchema = QuerySchema.extend({
+  cursor: z.strictObject({ publishedAt: InstantSchema, uri: UriSchema }).optional()
+});
 
-  if (value instanceof Date) {
-    return encodeInstant(Temporal.Instant.fromEpochMilliseconds(value.getTime()));
-  }
+function parse(schema, value, field) {
+  const result = schema.safeParse(value);
 
-  if (typeof value === 'string' && !value.isWellFormed()) {
-    throw new QueryValidationError(`query.${field} must be well-formed Unicode`, {
-      details: { field }
+  if (!result.success) {
+    throw new QueryValidationError(`invalid ${field}: ${z.prettifyError(result.error)}`, {
+      details: { field, issues: result.error.issues }
     });
   }
 
-  return value;
+  return result.data;
 }
 
-function rejectOperators(field, value) {
-  if (
-    value !== null &&
-    typeof value === 'object' &&
-    !(value instanceof Date) &&
-    !(value instanceof Temporal.Instant)
-  ) {
-    throw new QueryValidationError(
-      `query.${field} must be a primitive (string/number); got an object — operator injection rejected`,
-      { details: { field, type: typeof value } }
-    );
-  }
-}
+function optionPredicate(key, value, defaults, bindings) {
+  const path = `$.options.${key}`;
+  let predicate;
 
-function isDescending(order = '-publishedAt') {
-  if (!orderValues.includes(order)) {
-    throw new QueryValidationError(`invalid order "${order}"`, {
-      details: { field: 'order', allowed: orderValues }
-    });
+  if (value === null || typeof value === 'boolean') {
+    predicate = 'json_type(raw_json, ?) = ?';
+    bindings.push(path, value === null ? 'null' : String(value));
+  } else {
+    const types = typeof value === 'string' ? "('text')" : "('integer', 'real')";
+
+    predicate = `json_type(raw_json, ?) IN ${types} AND json_extract(raw_json, ?) = json_extract(?, '$')`;
+    bindings.push(path, path, JSON.stringify(value));
   }
 
-  return order.startsWith('-');
-}
-
-function buildOrder(order, descending) {
-  const field = descending ? order.slice(1) : order;
-  const direction = descending ? 'DESC' : 'ASC';
-
-  return `ORDER BY ${field} ${direction}, uri ${direction}`;
-}
-
-function rejectEmptyString(field, value) {
-  if (value === '') {
-    throw new QueryValidationError(`query.${field} must not be an empty string`, {
-      details: { field }
-    });
+  if (Object.hasOwn(defaults, key) && defaults[key] === value) {
+    predicate = `(${predicate}) OR json_type(raw_json, ?) IS NULL`;
+    bindings.push(path);
   }
+
+  return `(${predicate})`;
 }
 
-function buildWhere(query, descending, defaults) {
+function buildWhere(input, descending, defaults) {
+  const query = parse(FilterSchema, input, 'query');
   const where = [];
   const bindings = [];
 
-  if (query.options !== undefined) {
-    const result = OptionFilterSchema.safeParse(query.options);
-
-    if (!result.success) {
-      throw new QueryValidationError(
-        'options filter requires supported names and scalar JSON values'
-      );
-    }
-
-    for (const [key, value] of Object.entries(result.data)) {
-      const path = `$.options.${key}`;
-      let predicate;
-
-      if (value === null || typeof value === 'boolean') {
-        predicate = 'json_type(raw_json, ?) = ?';
-        bindings.push(path, value === null ? 'null' : String(value));
-      } else {
-        const types = typeof value === 'string' ? "('text')" : "('integer', 'real')";
-
-        predicate = `json_type(raw_json, ?) IN ${types} AND json_extract(raw_json, ?) = json_extract(?, '$')`;
-        bindings.push(path, path, JSON.stringify(value));
-      }
-
-      if (Object.hasOwn(defaults, key) && defaults[key] === value) {
-        predicate = `(${predicate}) OR json_type(raw_json, ?) IS NULL`;
-        bindings.push(path);
-      }
-
-      where.push(`(${predicate})`);
-    }
+  for (const [key, value] of Object.entries(query.options ?? {})) {
+    where.push(optionPredicate(key, value, defaults, bindings));
   }
 
-  rejectEmptyString('status', query.status);
-  rejectEmptyString('tag', query.tag);
-  rejectEmptyString('uri', query.uri);
-
-  if (query.status) {
-    rejectOperators('status', query.status);
+  if (query.status !== undefined) {
     where.push('status = ?');
-    bindings.push(bound(query.status, 'status'));
-  }
-
-  if (query.tag) {
-    rejectOperators('tag', query.tag);
-    where.push("EXISTS (SELECT 1 FROM json_each(tags_json) WHERE value = json_extract(?, '$'))");
-    bindings.push(JSON.stringify(query.tag));
+    bindings.push(query.status);
   }
 
   if (query.tags !== undefined) {
-    if (!Array.isArray(query.tags)) {
-      throw new QueryValidationError('query.tags must be an array of tags');
-    }
-
-    for (const tag of query.tags) {
-      if (!TagSchema.safeParse(tag).success) {
-        throw new QueryValidationError('query.tags must contain valid tags');
-      }
-    }
-
     where.push(`NOT EXISTS (
       SELECT 1 FROM json_each(?) AS required
       WHERE NOT EXISTS (
@@ -138,44 +66,24 @@ function buildWhere(query, descending, defaults) {
     bindings.push(JSON.stringify(query.tags));
   }
 
-  if (query.before) {
-    rejectOperators('before', query.before);
+  if (query.before !== undefined) {
     where.push('publishedAt < ?');
-    bindings.push(bound(query.before, 'before'));
+    bindings.push(encodeInstant(query.before));
   }
 
-  if (query.after) {
-    rejectOperators('after', query.after);
+  if (query.after !== undefined) {
     where.push('publishedAt > ?');
-    bindings.push(bound(query.after, 'after'));
+    bindings.push(encodeInstant(query.after));
   }
 
-  if (query.uri) {
-    rejectOperators('uri', query.uri);
+  if (query.uri !== undefined) {
     where.push('uri = ?');
-    bindings.push(bound(query.uri, 'uri'));
+    bindings.push(query.uri);
   }
 
-  if (query.cursor) {
-    if (
-      typeof query.cursor !== 'object' ||
-      Array.isArray(query.cursor) ||
-      query.cursor.publishedAt == null ||
-      query.cursor.uri == null
-    ) {
-      throw new QueryValidationError('query.cursor must be an object with publishedAt and uri', {
-        details: { field: 'cursor' }
-      });
-    }
-
-    const { publishedAt, uri } = query.cursor;
-    rejectOperators('cursor.publishedAt', publishedAt);
-    rejectOperators('cursor.uri', uri);
-
-    const operator = descending ? '<' : '>';
-
-    where.push(`(publishedAt, uri) ${operator} (?, ?)`);
-    bindings.push(bound(publishedAt, 'cursor.publishedAt'), bound(uri, 'cursor.uri'));
+  if (query.cursor !== undefined) {
+    where.push(`(publishedAt, uri) ${descending ? '<' : '>'} (?, ?)`);
+    bindings.push(encodeInstant(query.cursor.publishedAt), query.cursor.uri);
   }
 
   return {
@@ -184,52 +92,21 @@ function buildWhere(query, descending, defaults) {
   };
 }
 
-function validatePage(options) {
-  if (options.limit !== undefined) {
-    const result = LimitSchema.safeParse(options.limit);
-
-    if (!result.success) {
-      throw new QueryValidationError(`options.limit must be a non-negative integer or null`, {
-        details: { field: 'limit', issues: result.error.issues }
-      });
-    }
-  }
-
-  if (options.offset !== undefined) {
-    const result = OffsetSchema.safeParse(options.offset);
-
-    if (!result.success) {
-      throw new QueryValidationError(`options.offset must be a non-negative integer`, {
-        details: { field: 'offset', issues: result.error.issues }
-      });
-    }
-  }
-}
-
-function buildPage(options) {
-  validatePage(options);
-
-  const hasOffset = options.offset != null && options.offset > 0;
-
-  if (options.limit == null && !hasOffset) {
-    return '';
-  }
-
-  const limit = options.limit != null ? Number(options.limit) : -1;
-  const limitSql = `LIMIT ${limit}`;
-
-  return hasOffset ? `${limitSql} OFFSET ${Number(options.offset)}` : limitSql;
-}
-
 export function buildQuery(query, options, defaults = {}) {
-  const order = options.order ?? '-publishedAt';
-  const descending = isDescending(order);
+  const { order = '-publishedAt', limit, offset } = parse(OptionsSchema, options, 'options');
+  const descending = order.startsWith('-');
+  const field = descending ? order.slice(1) : order;
+  const direction = descending ? 'DESC' : 'ASC';
   const { whereSql, bindings } = buildWhere(query, descending, defaults);
-  const orderSql = buildOrder(order, descending);
-  const pageSql = buildPage(options);
+  let pageSql = '';
+
+  if (limit != null || offset) {
+    pageSql = 'LIMIT ? OFFSET ?';
+    bindings.push(limit ?? -1, offset ?? 0);
+  }
 
   return {
-    sql: `SELECT raw_json FROM posts ${whereSql} ${orderSql} ${pageSql}`.trim(),
+    sql: `SELECT raw_json FROM posts ${whereSql} ORDER BY ${field} ${direction}, uri ${direction} ${pageSql}`.trim(),
     bindings
   };
 }

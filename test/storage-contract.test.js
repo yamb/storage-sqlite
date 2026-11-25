@@ -262,6 +262,17 @@ test('next()/prev() navigate equal-timestamp siblings by uri tiebreak', async ()
   }
 });
 
+test('traversals started after close reject as not open', async () => {
+  const storage = sqlite();
+  await storage.open();
+  const posts = storage.all();
+  const entries = storage.entries();
+  await storage.close();
+
+  await assert.rejects(Array.fromAsync(posts), { code: 'YAMB_STORAGE_NOT_OPEN' });
+  await assert.rejects(Array.fromAsync(entries), { code: 'YAMB_STORAGE_NOT_OPEN' });
+});
+
 test('close() with an already-aborted signal still closes the db (no leak)', async () => {
   const storage = sqlite();
   await storage.open({ timeZone: 'UTC', clock: () => I('2026-04-01T00:00:00Z') });

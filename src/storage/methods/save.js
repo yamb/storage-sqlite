@@ -1,19 +1,17 @@
 import { randomUUIDv7 } from 'node:crypto';
 
-import { StorageNotOpenError, StorageDuplicateError, StorageWriteError } from '#core/errors';
+import { StorageWriteError } from '#core/errors';
 
-import { getState } from '../internal.js';
-import { mismatch } from './mismatch.js';
-
-const SQLITE_CONSTRAINT_UNIQUE = 2067;
+import { openState } from '../internal.js';
+import { storable } from './key.js';
+import { missing, write } from './write.js';
 
 function omitUndefined(raw) {
   return Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== undefined));
 }
 
-function rowParams(id, raw) {
+function columns(raw) {
   const fields = {
-    id,
     uri: raw.uri,
     slug: raw.slug,
     title: raw.title,
@@ -35,58 +33,41 @@ function rowParams(id, raw) {
     ...Object.values(fields),
     JSON.stringify(raw.tags ?? []),
     JSON.stringify(raw.links?.related ?? []),
-    JSON.stringify({ ...raw, id })
+    JSON.stringify(raw)
   ];
 }
 
 export default {
   name: 'save',
 
-  async fn(storage, raw, options = {}) {
-    const state = getState(storage);
-
-    if (!state.db) {
-      throw new StorageNotOpenError();
-    }
-
+  async fn(storage, input, options = {}) {
+    const state = openState(storage);
     const { signal, expected } = options;
+    const { statements } = state;
 
     signal?.throwIfAborted();
 
-    const isInsert = !raw.id;
-    const id = raw.id ?? randomUUIDv7();
-    const { statements } = state;
+    if (input.id === undefined) {
+      const raw = { ...input, id: randomUUIDv7() };
+      const params = columns(raw);
 
-    try {
-      if (isInsert) {
-        statements.insert.run(...rowParams(id, raw));
-      } else {
-        const [, ...params] = rowParams(id, raw);
-        const result =
-          expected === undefined
-            ? statements.update.run(...params, id)
-            : statements.updateIf.run(...params, id, expected);
+      write(state, raw.id, undefined, () => statements.insert.run(raw.id, ...params));
 
-        if (result.changes === 0) {
-          throw mismatch(state, id, expected);
-        }
-      }
-    } catch (cause) {
-      if (cause.code?.startsWith('YAMB_')) {
-        throw cause;
-      }
-
-      if (cause.errcode === SQLITE_CONSTRAINT_UNIQUE) {
-        throw new StorageDuplicateError(`uri "${raw.uri}" duplicate`, {
-          cause
-        });
-      }
-
-      throw new StorageWriteError(`sqlite write failed: ${cause.message}`, {
-        cause
-      });
+      return omitUndefined(raw);
     }
 
-    return omitUndefined({ ...raw, id });
+    if (!storable(input.id, 'id', StorageWriteError)) {
+      throw missing(input.id);
+    }
+
+    const params = columns(input);
+
+    write(state, input.id, expected, () =>
+      expected === undefined
+        ? statements.update.run(...params, input.id)
+        : statements.updateIf.run(...params, input.id, expected)
+    );
+
+    return omitUndefined(input);
   }
 };

@@ -1,6 +1,6 @@
 {
   "name": "yamb-storage-sqlite",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "SQLite storage for Yamb using node:sqlite",
   "keywords": [
     "blog",

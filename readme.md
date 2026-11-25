@@ -50,7 +50,7 @@ console.log(saved.text);
 | `path`     | Nonempty path to an existing SQLite file | Required |
 | `readonly` | Open without write access                | `false`  |
 
-`open()` requires the file to exist and prepares statements against its `posts` table. The application supplies the schema and any indexes.
+`open()` opens the existing file, never creates one, and prepares statements against its `posts` table. The application supplies the schema and any indexes.
 
 | Column                      | Representation                                         |
 | --------------------------- | ------------------------------------------------------ |
@@ -62,13 +62,13 @@ console.log(saved.text);
 | `tags_json`, `related_json` | Non-null JSON text arrays                              |
 | `raw_json`                  | Non-null JSON text containing the complete source post |
 
-Flat columns support SQL filtering and ordering. `raw_json` is the returned source post, with dates as fixed-precision UTC strings and `undefined` properties omitted. Flat fields and lookup/query keys reject unpaired surrogates and preserve NUL. JSON-only strings and keys preserve both.
+Flat columns support SQL filtering and ordering. `raw_json` is the returned source post, with dates as fixed-precision UTC strings and `undefined` properties omitted. Flat fields reject unpaired surrogates and preserve NUL. JSON-only strings and keys preserve both. An ID or URI with unpaired surrogates is never stored, so `find` and `fetch` return `null` for it, and updates, removals and fences reject with `YAMB_POST_NOT_FOUND` without touching the database.
 
-New IDs use `randomUUIDv7()`. Updates replace whole rows and fail if the target was deleted. Database constraints enforce URI uniqueness.
+A save without an `id` inserts a row with a `randomUUIDv7()` ID; any other `id`, including an empty one, is an update target. Updates replace whole rows and fail if the target was deleted. Database constraints enforce URI uniqueness.
 
-Core stores a version string as the top-level `version` key of `raw_json`. When core supplies an expected version, each update, removal and fence is a single `UPDATE` or `DELETE` whose `WHERE` clause also requires `json_extract(raw_json, '$.version') IS ?`, so the comparison and the write are atomic across connections; `null` matches a row without a version. A fence sets only that key with `json_set` in the same statement, without reading the row first. A statement that changes nothing is followed by an ID lookup that reports `YAMB_POST_CONFLICT` for an existing row and `YAMB_POST_NOT_FOUND` otherwise. Rows written before versions need no schema change or migration.
+Core stores a version string as the top-level `version` key of `raw_json`. When core supplies an expected version, each update, removal and fence is a single `UPDATE` or `DELETE` whose `WHERE` clause also requires `json_extract(raw_json, '$.version') IS ?`, so the comparison and the write are atomic across connections; `null` matches a row without a version. A fence sets only that key with `json_set` in the same statement, without reading the row first. A statement that changes nothing is followed by an ID lookup that reports `YAMB_POST_CONFLICT` for an existing row and `YAMB_POST_NOT_FOUND` otherwise.
 
-Option comparisons use exact JSON scalar types. Missing fields match fixed defaults supplied by core on open. `find(id)` looks up a post by ID and `fetch(uri)` looks it up by current URI. Core refreshes its lookup maps from the `[id, uri]` pairs yielded by `entries()`.
+Queries and selections are validated with core's query schemas, so unknown keys fail. Date bounds and cursors accept instants or ISO strings and are compared as fixed-precision UTC strings. Option comparisons use exact JSON scalar types. Missing fields match fixed defaults supplied by core on open. `find(id)` looks up a post by ID and `fetch(uri)` looks it up by current URI. Core refreshes its lookup maps from the `[id, uri]` pairs yielded by `entries()`.
 
 ### Ownership and cancellation
 
@@ -83,8 +83,8 @@ Each traversal owns a statement iterator and can observe concurrent writes. Earl
 | `YAMB_SQLITE_CONFIG` | Invalid configuration (`SqliteConfigError`) |
 | `YAMB_SQLITE_OPEN` | Existing file cannot be opened (`SqliteOpenError`); cause retained |
 | `YAMB_SQLITE_SCHEMA` | Statement preparation or open-context initialization failed (`SqliteSchemaError`); cause retained |
-| `YAMB_STORAGE_READ` | Invalid native lookup key or corrupt `raw_json` |
-| `YAMB_STORAGE_WRITE` | Invalid flat Unicode or SQLite write failure; native cause retained |
+| `YAMB_STORAGE_READ` | Non-string lookup key or corrupt `raw_json` |
+| `YAMB_STORAGE_WRITE` | Non-string ID, invalid flat Unicode or SQLite write failure; native cause retained |
 | `YAMB_STORAGE_DUPLICATE` | Unique constraint violation |
 | `YAMB_POST_NOT_FOUND` | Missing update/removal/fence target; missing reads return `null` |
 | `YAMB_POST_CONFLICT` | Stored version differs from the expected one; nothing written |

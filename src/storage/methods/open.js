@@ -1,9 +1,18 @@
-import { accessSync, constants } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
+import { pathToFileURL } from 'node:url';
 
 import { SqliteOpenError, SqliteSchemaError } from '../../errors/index.js';
 import { prepare } from '../../statements/index.js';
 import { getState } from '../internal.js';
+
+function location({ path, readonly }) {
+  const url = pathToFileURL(path);
+
+  // Without "c" in the mode SQLite never creates a missing file.
+  url.searchParams.set('mode', readonly ? 'ro' : 'rw');
+
+  return url;
+}
 
 export default {
   name: 'open',
@@ -17,10 +26,7 @@ export default {
     }
 
     try {
-      accessSync(state.config.path, constants.F_OK);
-      state.db = new DatabaseSync(state.config.path, {
-        readOnly: state.config.readonly
-      });
+      state.db = new DatabaseSync(location(state.config));
     } catch (cause) {
       throw new SqliteOpenError('failed to open existing sqlite database', { cause });
     }

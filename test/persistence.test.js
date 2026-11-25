@@ -56,6 +56,14 @@ test('insert, replace, rename and remove preserve identity and cleared fields', 
   assert.equal(reopened.title, 'target');
 });
 
+test('an empty ID is a missing update target, not an insert', async () => {
+  const storage = createStorage();
+  await storage.open();
+
+  await assert.rejects(storage.save(raw('empty', { id: '' })), { code: 'YAMB_POST_NOT_FOUND' });
+  assert.equal(await storage.count(), 0);
+});
+
 test('undefined fields are omitted on insert and full replacement', async () => {
   const storage = createStorage();
   await storage.open();
@@ -82,8 +90,8 @@ test('tag intersections, time bounds, exact URI and pagination execute in storag
   await storage.save(raw('draft', { status: 'draft' }));
 
   assert.equal(await storage.count({}), 4);
-  assert.equal(await storage.count({ status: 'published', tag: 'intro', tags: ['meta'] }), 2);
-  assert.equal(await storage.count({ tag: 'intro', tags: ['other'] }), 0);
+  assert.equal(await storage.count({ status: 'published', tags: ['intro', 'meta'] }), 2);
+  assert.equal(await storage.count({ tags: ['intro', 'other'] }), 0);
 
   const before = await Array.fromAsync(
     storage.all({ status: 'published', before: Temporal.Instant.from('2026-04-27T00:00:00Z') })
@@ -147,6 +155,26 @@ test('tag intersections, time bounds, exact URI and pagination execute in storag
   );
 });
 
+test('ISO string bounds and cursors compare as instants, not as text', async () => {
+  const storage = createStorage();
+  await storage.open();
+
+  const a = await storage.save(raw('aaa'));
+  await storage.save(raw('bbb'));
+  await storage.save(raw('ccc', { publishedAt: '2026-04-27T12:00:00.000000000Z' }));
+  const slugs = (query, options) => Array.fromAsync(storage.all(query, options), (p) => p.slug);
+
+  for (const same of ['2026-04-26T12:00:00Z', '2026-04-26T15:00:00+03:00']) {
+    assert.deepEqual(await slugs({ before: same }), []);
+    assert.equal(await storage.count({ before: same }), 0);
+    assert.deepEqual(await slugs({ after: same }), ['ccc']);
+    assert.deepEqual(
+      await slugs({ cursor: { publishedAt: same, uri: a.uri } }, { order: 'publishedAt' }),
+      ['bbb', 'ccc']
+    );
+  }
+});
+
 test('invalid standalone reads and queries fail without exposing records', async () => {
   const storage = createStorage();
   await storage.open();
@@ -154,13 +182,19 @@ test('invalid standalone reads and queries fail without exposing records', async
   await assert.rejects(() => storage.find({ $ne: null }), { code: 'YAMB_STORAGE_READ' });
   await assert.rejects(() => storage.fetch({ $ne: null }), { code: 'YAMB_STORAGE_READ' });
 
-  for (const query of [{ status: '' }, { tag: '' }, { uri: '' }]) {
+  for (const query of [
+    { status: '' },
+    { status: 'deleted' },
+    { tags: [''] },
+    { uri: '' },
+    { stauts: 'published' }
+  ]) {
     await assert.rejects(async () => Array.fromAsync(storage.all(query)), {
       code: 'YAMB_QUERY_VALIDATION'
     });
   }
 
-  for (const options of [{ limit: '5' }, { limit: 2.5 }, { offset: '2' }]) {
+  for (const options of [{ limit: '5' }, { limit: 2.5 }, { offset: '2' }, { sort: 'title' }]) {
     await assert.rejects(async () => Array.fromAsync(storage.all({}, options)), {
       code: 'YAMB_QUERY_VALIDATION'
     });

@@ -31,16 +31,7 @@ test('flat strings reject lone surrogates before insert or replacement', async (
   await storage.open();
   const saved = await storage.save(raw('original'));
 
-  for (const field of [
-    'id',
-    'uri',
-    'slug',
-    'title',
-    'status',
-    'createdAt',
-    'updatedAt',
-    'publishedAt'
-  ]) {
+  for (const field of ['uri', 'slug', 'title', 'status', 'createdAt', 'updatedAt', 'publishedAt']) {
     const value = `x\ud800z`;
     await assert.rejects(storage.save({ ...saved, [field]: value }), {
       code: 'YAMB_STORAGE_WRITE'
@@ -48,12 +39,10 @@ test('flat strings reject lone surrogates before insert or replacement', async (
     assert.deepEqual(await storage.find(saved.id), saved);
     assert.deepEqual(await Array.fromAsync(storage.entries()), [[saved.id, saved.uri]]);
 
-    if (field !== 'id') {
-      await assert.rejects(storage.save(raw('insert', { [field]: value })), {
-        code: 'YAMB_STORAGE_WRITE'
-      });
-      assert.equal(await storage.fetch('drafts/insert'), null);
-    }
+    await assert.rejects(storage.save(raw('insert', { [field]: value })), {
+      code: 'YAMB_STORAGE_WRITE'
+    });
+    assert.equal(await storage.fetch('drafts/insert'), null);
   }
   assert.equal(await storage.count(), 1);
 
@@ -61,14 +50,16 @@ test('flat strings reject lone surrogates before insert or replacement', async (
   const valid = await storage.save(raw(value, { title: value, status: value }));
   const loaded = await storage.fetch(valid.uri);
   assert.equal(loaded.title, value);
-  assert.equal(await storage.count({ status: value, uri: valid.uri }), 1);
+  assert.equal(loaded.status, value);
+  assert.deepEqual(await storage.find(valid.id), loaded);
 });
 
-test('malformed native keys and query bounds never alias replacement characters', async () => {
+test('malformed native keys match nothing and never alias replacement characters', async () => {
   const storage = sqlite();
   await storage.open();
   const saved = await storage.save(raw('�', { status: '�', publishedAt: '�' }));
   const db = new DatabaseSync(path);
+  const notFound = { code: 'YAMB_POST_NOT_FOUND' };
 
   try {
     const id = 'x�z';
@@ -78,13 +69,21 @@ test('malformed native keys and query bounds never alias replacement characters'
       saved.id
     );
     own(id);
+    const stored = await storage.find(id);
 
-    await assert.rejects(storage.find('x\ud800z'), { code: 'YAMB_STORAGE_READ' });
-    await assert.rejects(storage.fetch('drafts/\ud800'), { code: 'YAMB_STORAGE_READ' });
-    await assert.rejects(storage.remove('x\ud800z'), { code: 'YAMB_STORAGE_WRITE' });
+    assert.equal(await storage.find('x\ud800z'), null);
+    assert.equal(await storage.fetch('drafts/\ud800'), null);
 
-    const loaded = await storage.find(id);
-    assert.equal(loaded.id, id);
+    for (const expected of [undefined, null, 'v1']) {
+      await assert.rejects(
+        storage.save({ ...stored, id: 'x\ud800z', title: 'Replaced' }, { expected }),
+        notFound
+      );
+      await assert.rejects(storage.remove('x\ud800z', { expected }), notFound);
+      await assert.rejects(storage.fence('x\ud800z', 'v2', { expected }), notFound);
+    }
+
+    assert.deepEqual(await storage.find(id), stored);
 
     for (const query of [
       { uri: 'drafts/\ud800' },
@@ -101,7 +100,7 @@ test('malformed native keys and query bounds never alias replacement characters'
   }
 });
 
-test('JSON scalar strings retain exact singular, plural, option and default selection', async () => {
+test('JSON scalar strings retain exact tag, option and default selection', async () => {
   const storage = sqlite();
   const blog = yamb({ storage, options: z.object({ value: z.string().default('x\ud800z') }) });
   await blog.open();
@@ -120,9 +119,7 @@ test('JSON scalar strings retain exact singular, plural, option and default sele
     assert.equal(posts.length, count);
 
     if (value) {
-      assert.equal(await blog.all({ tag: value }).count(), 1);
       assert.equal(await blog.all({ tags: [value] }).count(), 1);
-      assert.equal(await blog.all({ tag: value, tags: [value] }).count(), 1);
     }
   }
 });
@@ -176,7 +173,7 @@ test('invalid provided tags fail before SQL without narrowing valid array semant
   for (const [tags, count] of [
     [[], 2],
     [['one'], 1],
-    [Array(1001).fill('one'), 1],
+    [Array(50).fill('one'), 1],
     [['😀'.repeat(32)], 1]
   ]) {
     assert.equal(await storage.count({ tags }), count);

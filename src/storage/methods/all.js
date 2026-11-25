@@ -1,7 +1,5 @@
-import { StorageNotOpenError } from '#core/errors';
-
 import { buildQuery } from '../../query/build.js';
-import { getState } from '../internal.js';
+import { openState } from '../internal.js';
 import { parseRawJson } from './parse-raw.js';
 
 export default {
@@ -9,19 +7,13 @@ export default {
 
   fn(storage, query = {}, options = {}) {
     options.signal?.throwIfAborted();
-    const state = getState(storage);
-
-    if (!state.db) {
-      throw new StorageNotOpenError();
-    }
-
-    const { sql, bindings } = buildQuery(query, options, state.optionDefaults);
+    const { sql, bindings } = buildQuery(query, options, openState(storage).optionDefaults);
 
     return {
       async *[Symbol.asyncIterator]() {
         options.signal?.throwIfAborted();
         // Statement iterators share execution state; each traversal needs its own statement.
-        const stmt = state.db.prepare(sql);
+        using stmt = openState(storage).db.prepare(sql);
 
         for (const row of stmt.iterate(...bindings)) {
           options.signal?.throwIfAborted();

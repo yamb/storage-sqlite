@@ -38,16 +38,13 @@ export function test(name, fn) {
       return;
     }
 
-    const inspector = new DatabaseSync(path, { readOnly: true });
-
-    try {
+    {
+      using inspector = new DatabaseSync(path, { readOnly: true });
       assert.equal(
         inspector.prepare('SELECT count(*) AS n FROM posts').get().n,
         0,
         'prepared SQLite must be empty before this scenario'
       );
-    } finally {
-      inspector.close();
     }
 
     try {
@@ -59,18 +56,13 @@ export function test(name, fn) {
       storages.clear();
 
       if (owned.size) {
-        const db = new DatabaseSync(path);
+        using db = new DatabaseSync(path);
+        const remove = db.prepare('DELETE FROM posts WHERE id = ?');
 
-        try {
-          const remove = db.prepare('DELETE FROM posts WHERE id = ?');
-
-          for (const id of owned) {
-            remove.run(id);
-          }
-        } finally {
-          db.close();
-          owned.clear();
+        for (const id of owned) {
+          remove.run(id);
         }
+        owned.clear();
       }
     }
   });
